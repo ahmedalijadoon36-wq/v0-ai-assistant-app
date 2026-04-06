@@ -153,7 +153,8 @@ export function useAudioPlayback({
         })
 
         if (!response.ok) {
-          throw new Error("TTS request failed")
+          // Silently fall back to Web Speech if ElevenLabs is not configured
+          throw new Error("TTS_FALLBACK")
         }
 
         const arrayBuffer = await response.arrayBuffer()
@@ -194,8 +195,10 @@ export function useAudioPlayback({
         // Start analyzing
         analyzeAudio()
       } catch (error) {
-        console.error("ElevenLabs playback error, falling back to Web Speech:", error)
-        // Fallback to Web Speech API
+        // Silently fall back to Web Speech API (ElevenLabs may not be configured)
+        if (error instanceof Error && error.message !== "TTS_FALLBACK") {
+          console.warn("Falling back to Web Speech API")
+        }
         playWithWebSpeech(text)
       }
     },
