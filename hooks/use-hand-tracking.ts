@@ -22,6 +22,9 @@ interface UseHandTrackingReturn {
   stopTracking: () => void
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type HandLandmarkerInstance = any
+
 export function useHandTracking({
   smoothing = 0.15,
   enabled = false,
@@ -32,7 +35,7 @@ export function useHandTracking({
   const [error, setError] = useState<string | null>(null)
 
   const videoRef = useRef<HTMLVideoElement | null>(null)
-  const handLandmarkerRef = useRef<any>(null)
+  const handLandmarkerRef = useRef<HandLandmarkerInstance>(null)
   const streamRef = useRef<MediaStream | null>(null)
   const animationFrameRef = useRef<number | null>(null)
   const smoothedPositionRef = useRef<HandPosition>({ x: 0.5, y: 0.5 })
@@ -67,7 +70,7 @@ export function useHandTracking({
       } else {
         setHandPosition(null)
       }
-    } catch (err) {
+    } catch {
       // Silently continue on detection errors
     }
 
@@ -81,18 +84,24 @@ export function useHandTracking({
     setError(null)
 
     try {
-      // Dynamically import MediaPipe Tasks Vision
-      const { HandLandmarker, FilesetResolver } = await import("@mediapipe/tasks-vision")
+      // Load MediaPipe from CDN using dynamic import with webpackIgnore
+      const vision = await import(
+        /* webpackIgnore: true */
+        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/vision_bundle.mjs"
+      )
+
+      const { HandLandmarker, FilesetResolver } = vision
 
       // Initialize the vision fileset
-      const vision = await FilesetResolver.forVisionTasks(
-        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
+      const visionFileset = await FilesetResolver.forVisionTasks(
+        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm"
       )
 
       // Create the hand landmarker
-      const handLandmarker = await HandLandmarker.createFromOptions(vision, {
+      const handLandmarker = await HandLandmarker.createFromOptions(visionFileset, {
         baseOptions: {
-          modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+          modelAssetPath:
+            "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
           delegate: "GPU",
         },
         runningMode: "VIDEO",
@@ -106,10 +115,10 @@ export function useHandTracking({
 
       // Request camera access
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { 
-          facingMode: "user", 
-          width: { ideal: 640 }, 
-          height: { ideal: 480 } 
+        video: {
+          facingMode: "user",
+          width: { ideal: 640 },
+          height: { ideal: 480 },
         },
       })
 
@@ -117,7 +126,7 @@ export function useHandTracking({
 
       if (videoRef.current) {
         videoRef.current.srcObject = stream
-        
+
         // Wait for video to be ready
         await new Promise<void>((resolve) => {
           if (videoRef.current) {
