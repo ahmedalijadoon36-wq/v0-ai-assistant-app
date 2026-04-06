@@ -3,17 +3,119 @@ import { z } from "zod"
 
 // Define all PC control tools that Friday can use
 export const pcControlTools = {
-  // Open Spotify and play music
+  // Spotify playback control - play music
+  spotifyPlay: tool({
+    description: "Play music on Spotify. Use this when the user wants to play a specific song, artist, or music. This will control their actual Spotify app.",
+    parameters: z.object({
+      query: z.string().optional().describe("Song name, artist, or what to play (e.g., 'Shape of You by Ed Sheeran', 'jazz music', 'The Weeknd')"),
+    }),
+    execute: async ({ query }) => {
+      return {
+        action: "spotifyApi",
+        apiAction: "play",
+        query,
+        message: query ? `Playing "${query}" on Spotify` : "Resuming Spotify playback",
+      }
+    },
+  }),
+
+  // Spotify pause
+  spotifyPause: tool({
+    description: "Pause Spotify playback. Use when the user wants to pause, stop, or halt the music.",
+    parameters: z.object({}),
+    execute: async () => {
+      return {
+        action: "spotifyApi",
+        apiAction: "pause",
+        message: "Pausing Spotify playback",
+      }
+    },
+  }),
+
+  // Spotify next track
+  spotifyNext: tool({
+    description: "Skip to the next track on Spotify. Use when the user wants to skip a song or play the next one.",
+    parameters: z.object({}),
+    execute: async () => {
+      return {
+        action: "spotifyApi",
+        apiAction: "next",
+        message: "Skipping to next track",
+      }
+    },
+  }),
+
+  // Spotify previous track
+  spotifyPrevious: tool({
+    description: "Go back to the previous track on Spotify. Use when the user wants to replay or go back to the last song.",
+    parameters: z.object({}),
+    execute: async () => {
+      return {
+        action: "spotifyApi",
+        apiAction: "previous",
+        message: "Going back to previous track",
+      }
+    },
+  }),
+
+  // Spotify volume control
+  spotifyVolume: tool({
+    description: "Set Spotify volume. Use when the user wants to adjust the music volume.",
+    parameters: z.object({
+      volume: z.number().min(0).max(100).describe("Volume level from 0 to 100"),
+    }),
+    execute: async ({ volume }) => {
+      return {
+        action: "spotifyApi",
+        apiAction: "volume",
+        volume,
+        message: `Setting Spotify volume to ${volume}%`,
+      }
+    },
+  }),
+
+  // Spotify shuffle
+  spotifyShuffle: tool({
+    description: "Toggle shuffle mode on Spotify.",
+    parameters: z.object({
+      enabled: z.boolean().describe("Whether to enable or disable shuffle"),
+    }),
+    execute: async ({ enabled }) => {
+      return {
+        action: "spotifyApi",
+        apiAction: "shuffle",
+        state: enabled,
+        message: `Turning shuffle ${enabled ? "on" : "off"}`,
+      }
+    },
+  }),
+
+  // Spotify search (returns results without playing)
+  spotifySearch: tool({
+    description: "Search for music on Spotify without playing. Use when the user wants to find or look up songs, artists, or albums.",
+    parameters: z.object({
+      query: z.string().describe("Search query for songs, artists, albums, or playlists"),
+    }),
+    execute: async ({ query }) => {
+      return {
+        action: "spotifyApi",
+        apiAction: "search",
+        query,
+        message: `Searching Spotify for "${query}"`,
+      }
+    },
+  }),
+
+  // Open Spotify web player (fallback for when API auth is not available)
   openSpotify: tool({
-    description: "Opens Spotify web player to search and play music. Use this when the user wants to play music, listen to songs, or open Spotify.",
+    description: "Opens Spotify web player in the browser. Use as fallback when Spotify API is not connected, or when user explicitly wants to open Spotify website.",
     parameters: z.object({
       query: z.string().optional().describe("Optional search query for a song, artist, album, or playlist"),
-      action: z.enum(["open", "search", "play"]).default("open").describe("The action to perform: open Spotify, search for music, or play"),
     }),
-    execute: async ({ query, action }) => {
+    execute: async ({ query }) => {
       let url = "https://open.spotify.com"
       
-      if (query && (action === "search" || action === "play")) {
+      if (query) {
         url = `https://open.spotify.com/search/${encodeURIComponent(query)}`
       }
       
