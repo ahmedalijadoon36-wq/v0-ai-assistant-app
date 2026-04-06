@@ -18,13 +18,12 @@ interface UseHandTrackingReturn {
   isLoading: boolean
   error: string | null
   videoRef: React.RefObject<HTMLVideoElement | null>
-  canvasRef: React.RefObject<HTMLCanvasElement | null>
   startTracking: () => void
   stopTracking: () => void
 }
 
 export function useHandTracking({
-  smoothing = 0.1,
+  smoothing = 0.15,
   enabled = false,
 }: UseHandTrackingOptions = {}): UseHandTrackingReturn {
   const [handPosition, setHandPosition] = useState<HandPosition | null>(null)
@@ -33,11 +32,47 @@ export function useHandTracking({
   const [error, setError] = useState<string | null>(null)
 
   const videoRef = useRef<HTMLVideoElement | null>(null)
-  const canvasRef = useRef<HTMLCanvasElement | null>(null)
-  const handsRef = useRef<any>(null)
-  const cameraRef = useRef<any>(null)
-  const smoothedPositionRef = useRef<HandPosition>({ x: 0.5, y: 0.5 })
+  const handLandmarkerRef = useRef<any>(null)
+  const streamRef = useRef<MediaStream | null>(null)
   const animationFrameRef = useRef<number | null>(null)
+  const smoothedPositionRef = useRef<HandPosition>({ x: 0.5, y: 0.5 })
+
+  const detectHands = useCallback(() => {
+    if (!handLandmarkerRef.current || !videoRef.current || !isTracking) {
+      return
+    }
+
+    const video = videoRef.current
+    if (video.readyState < 2) {
+      animationFrameRef.current = requestAnimationFrame(detectHands)
+      return
+    }
+
+    try {
+      const results = handLandmarkerRef.current.detectForVideo(video, performance.now())
+
+      if (results.landmarks && results.landmarks.length > 0) {
+        // Get the palm center (landmark 9 is middle finger base)
+        const landmarks = results.landmarks[0]
+        const palmX = landmarks[9].x
+        const palmY = landmarks[9].y
+
+        // Apply smoothing
+        smoothedPositionRef.current = {
+          x: smoothedPositionRef.current.x + (palmX - smoothedPositionRef.current.x) * smoothing,
+          y: smoothedPositionRef.current.y + (palmY - smoothedPositionRef.current.y) * smoothing,
+        }
+
+        setHandPosition({ ...smoothedPositionRef.current })
+      } else {
+        setHandPosition(null)
+      }
+    } catch (err) {
+      // Silently continue on detection errors
+    }
+
+    animationFrameRef.current = requestAnimationFrame(detectHands)
+  }, [isTracking, smoothing])
 
   const startTracking = useCallback(async () => {
     if (isTracking || isLoading) return
@@ -46,96 +81,84 @@ export function useHandTracking({
     setError(null)
 
     try {
-      // Dynamically import MediaPipe
-      const { Hands } = await import("@mediapipe/hands")
-      const { Camera } = await import("@mediapipe/camera_utils")
+      // Dynamically import MediaPipe Tasks Vision
+      const { HandLandmarker, FilesetResolver } = await import("@mediapipe/tasks-vision")
 
-      const hands = new Hands({
-        locateFile: (file: string) => {
-          return `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+      // Initialize the vision fileset
+      const vision = await FilesetResolver.forVisionTasks(
+        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm"
+      )
+
+      // Create the hand landmarker
+      const handLandmarker = await HandLandmarker.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+          delegate: "GPU",
         },
-      })
-
-      hands.setOptions({
-        maxNumHands: 1,
-        modelComplexity: 0, // 0 = lite, faster
-        minDetectionConfidence: 0.5,
+        runningMode: "VIDEO",
+        numHands: 1,
+        minHandDetectionConfidence: 0.5,
+        minHandPresenceConfidence: 0.5,
         minTrackingConfidence: 0.5,
       })
 
-      hands.onResults((results: any) => {
-        if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
-          // Get the palm center (landmark 9 is middle finger base)
-          const landmarks = results.multiHandLandmarks[0]
-          const palmX = landmarks[9].x
-          const palmY = landmarks[9].y
-
-          // Apply smoothing
-          smoothedPositionRef.current = {
-            x: smoothedPositionRef.current.x + (palmX - smoothedPositionRef.current.x) * smoothing,
-            y: smoothedPositionRef.current.y + (palmY - smoothedPositionRef.current.y) * smoothing,
-          }
-
-          setHandPosition({ ...smoothedPositionRef.current })
-        } else {
-          setHandPosition(null)
-        }
-      })
-
-      handsRef.current = hands
+      handLandmarkerRef.current = handLandmarker
 
       // Request camera access
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user", width: 640, height: 480 },
+        video: { 
+          facingMode: "user", 
+          width: { ideal: 640 }, 
+          height: { ideal: 480 } 
+        },
       })
+
+      streamRef.current = stream
 
       if (videoRef.current) {
         videoRef.current.srcObject = stream
-        await videoRef.current.play()
-
-        const camera = new Camera(videoRef.current, {
-          onFrame: async () => {
-            if (handsRef.current && videoRef.current) {
-              await handsRef.current.send({ image: videoRef.current })
+        
+        // Wait for video to be ready
+        await new Promise<void>((resolve) => {
+          if (videoRef.current) {
+            videoRef.current.onloadedmetadata = () => {
+              videoRef.current?.play()
+              resolve()
             }
-          },
-          width: 640,
-          height: 480,
+          }
         })
-
-        cameraRef.current = camera
-        await camera.start()
 
         setIsTracking(true)
         setIsLoading(false)
+
+        // Start detection loop
+        animationFrameRef.current = requestAnimationFrame(detectHands)
       }
     } catch (err) {
       console.error("Hand tracking error:", err)
       setError(err instanceof Error ? err.message : "Failed to start hand tracking")
       setIsLoading(false)
     }
-  }, [isTracking, isLoading, smoothing])
+  }, [isTracking, isLoading, detectHands])
 
   const stopTracking = useCallback(() => {
-    if (cameraRef.current) {
-      cameraRef.current.stop()
-      cameraRef.current = null
-    }
-
-    if (videoRef.current?.srcObject) {
-      const tracks = (videoRef.current.srcObject as MediaStream).getTracks()
-      tracks.forEach((track) => track.stop())
-      videoRef.current.srcObject = null
-    }
-
-    if (handsRef.current) {
-      handsRef.current.close()
-      handsRef.current = null
-    }
-
     if (animationFrameRef.current) {
       cancelAnimationFrame(animationFrameRef.current)
       animationFrameRef.current = null
+    }
+
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop())
+      streamRef.current = null
+    }
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = null
+    }
+
+    if (handLandmarkerRef.current) {
+      handLandmarkerRef.current.close()
+      handLandmarkerRef.current = null
     }
 
     setIsTracking(false)
@@ -165,7 +188,6 @@ export function useHandTracking({
     isLoading,
     error,
     videoRef,
-    canvasRef,
     startTracking,
     stopTracking,
   }
