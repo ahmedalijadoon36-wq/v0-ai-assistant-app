@@ -8,7 +8,7 @@ const _geistMono = Geist_Mono({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: 'F.R.I.D.A.Y. - AI Assistant',
-  description: 'Your personal AI assistant with voice activation',
+  description: 'Your personal AI assistant with voice activation, Google search, and Spotify integration',
   generator: 'v0.app',
   icons: {
     icon: [

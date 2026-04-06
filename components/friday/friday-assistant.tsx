@@ -5,31 +5,80 @@ import { useChat } from "ai/react"
 import { AnimatedOrb, type OrbState } from "./animated-orb"
 import { TranscriptDisplay } from "./transcript-display"
 import { StatusIndicator } from "./status-indicator"
+import { SpotifyPlayer } from "./spotify-player"
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition"
 import { useAudioPlayback } from "@/hooks/use-audio-playback"
+import { useSpotify } from "@/hooks/use-spotify"
 
-// Keywords that indicate the user wants current information
+// Keywords that indicate the user wants current information or factual data
 const SEARCH_KEYWORDS = [
-  "current",
-  "latest",
-  "today",
-  "now",
-  "recent",
-  "news",
-  "weather",
-  "price",
-  "stock",
-  "score",
-  "update",
-  "happening",
-  "2024",
-  "2025",
-  "2026",
+  // Time-sensitive
+  "current", "latest", "today", "now", "recent", "news", "happening",
+  "2024", "2025", "2026", "this year", "this month", "this week",
+  // Information queries
+  "weather", "price", "stock", "score", "update", "results",
+  "how much", "how many", "what is", "who is", "where is", "when is",
+  // Research/facts
+  "tell me about", "explain", "define", "meaning of", "history of",
+  "facts about", "information about", "details about",
+  // Comparisons and reviews
+  "best", "top", "review", "compare", "vs", "versus", "difference between",
+  // Events and schedules
+  "schedule", "event", "game", "match", "concert", "movie", "show",
+  // Tech and products
+  "release", "launch", "specs", "features", "download",
+]
+
+// Music-related keywords for Spotify
+const MUSIC_KEYWORDS = [
+  "play", "song", "music", "track", "album", "artist", "playlist",
+  "pause", "stop", "skip", "next", "previous", "spotify",
 ]
 
 function shouldSearch(query: string): boolean {
   const lowerQuery = query.toLowerCase()
+  // Don't search for music commands
+  if (MUSIC_KEYWORDS.some(keyword => lowerQuery.includes(keyword))) {
+    return false
+  }
   return SEARCH_KEYWORDS.some((keyword) => lowerQuery.includes(keyword))
+}
+
+function extractMusicQuery(query: string): string | null {
+  const lowerQuery = query.toLowerCase()
+  
+  // Check for play commands
+  const playPatterns = [
+    /play\s+(?:the\s+)?(?:song\s+)?["']?([^"']+)["']?(?:\s+(?:by|from)\s+(.+))?/i,
+    /(?:can you |could you |please )?play\s+(.+)/i,
+    /put on\s+(.+)/i,
+    /i want to (?:hear|listen to)\s+(.+)/i,
+  ]
+  
+  for (const pattern of playPatterns) {
+    const match = query.match(pattern)
+    if (match) {
+      return match[1].trim()
+    }
+  }
+  
+  return null
+}
+
+function getMusicCommand(query: string): "pause" | "next" | "previous" | null {
+  const lowerQuery = query.toLowerCase()
+  
+  if (lowerQuery.includes("pause") || lowerQuery.includes("stop the music") || lowerQuery.includes("stop playing")) {
+    return "pause"
+  }
+  if (lowerQuery.includes("skip") || lowerQuery.includes("next song") || lowerQuery.includes("next track")) {
+    return "next"
+  }
+  if (lowerQuery.includes("previous") || lowerQuery.includes("go back") || lowerQuery.includes("last song")) {
+    return "previous"
+  }
+  
+  return null
 }
 
 export function FridayAssistant() {
@@ -42,7 +91,23 @@ export function FridayAssistant() {
     snippet: string
     link: string
   }> | null>(null)
+  const [spotifyMessage, setSpotifyMessage] = useState<string | null>(null)
   const pendingQueryRef = useRef<string | null>(null)
+  const playAudioRef = useRef<(text: string) => void>(() => {})
+
+  // Spotify integration
+  const spotify = useSpotify()
+
+  const { isPlaying, playAudio, stopAudio } = useAudioPlayback({
+    onStart: () => setOrbState("speaking"),
+    onEnd: () => setOrbState("idle"),
+    onAudioLevel: setAudioLevel,
+  })
+
+  // Keep ref in sync
+  useEffect(() => {
+    playAudioRef.current = playAudio
+  }, [playAudio])
 
   const { messages, append, isLoading } = useChat({
     api: "/api/chat",
@@ -50,7 +115,7 @@ export function FridayAssistant() {
     onFinish: (message) => {
       // Play the response
       if (message.role === "assistant" && message.content) {
-        playAudio(message.content)
+        playAudioRef.current(message.content)
       }
     },
   })
@@ -60,8 +125,61 @@ export function FridayAssistant() {
       if (!transcript.trim()) return
 
       setOrbState("processing")
+      setSpotifyMessage(null)
 
-      // Check if we need to search
+      // Check for music commands first
+      const musicCommand = getMusicCommand(transcript)
+      if (musicCommand && spotify.connected) {
+        let result
+        switch (musicCommand) {
+          case "pause":
+            result = await spotify.pause()
+            if (result.success) {
+              setSpotifyMessage("Paused")
+              playAudioRef.current("Music paused")
+            }
+            break
+          case "next":
+            result = await spotify.next()
+            if (result.success) {
+              setSpotifyMessage("Skipped to next track")
+              playAudioRef.current("Playing next track")
+            }
+            break
+          case "previous":
+            result = await spotify.previous()
+            if (result.success) {
+              setSpotifyMessage("Playing previous track")
+              playAudioRef.current("Going back to previous track")
+            }
+            break
+        }
+        setOrbState("idle")
+        return
+      }
+
+      // Check for play music request
+      const musicQuery = extractMusicQuery(transcript)
+      if (musicQuery) {
+        if (!spotify.connected) {
+          playAudioRef.current("Please connect to Spotify first using the button below")
+          setOrbState("idle")
+          return
+        }
+        
+        const result = await spotify.searchAndPlay(musicQuery)
+        if (result.success && result.track) {
+          setSpotifyMessage(`Playing "${result.track.name}" by ${result.track.artist}`)
+          playAudioRef.current(`Now playing ${result.track.name} by ${result.track.artist}`)
+        } else if (result.error) {
+          setSpotifyMessage(result.error)
+          playAudioRef.current(result.error)
+        }
+        setOrbState("idle")
+        return
+      }
+
+      // Check if we need to search Google
       if (shouldSearch(transcript)) {
         try {
           const response = await fetch("/api/search", {
@@ -83,7 +201,7 @@ export function FridayAssistant() {
       // Store the query and let useEffect handle the append
       pendingQueryRef.current = transcript
     },
-    []
+    [spotify]
   )
 
   // Handle appending message after searchResults is updated
@@ -109,12 +227,6 @@ export function FridayAssistant() {
       wakeWord: "friday",
       continuous: wakeWordEnabled,
     })
-
-  const { isPlaying, playAudio, stopAudio } = useAudioPlayback({
-    onStart: () => setOrbState("speaking"),
-    onEnd: () => setOrbState(wakeWordEnabled ? "idle" : "idle"),
-    onAudioLevel: setAudioLevel,
-  })
 
   // Mouse tracking for orb control
   useEffect(() => {
@@ -264,9 +376,21 @@ export function FridayAssistant() {
           />
         </div>
 
+        {/* Spotify message */}
+        {spotifyMessage && (
+          <div className="mt-4 px-4 py-2 rounded-lg bg-green-500/10 border border-green-500/30">
+            <p className="text-sm text-green-400">{spotifyMessage}</p>
+          </div>
+        )}
+
+        {/* Spotify Player */}
+        <div className="mt-8">
+          <SpotifyPlayer />
+        </div>
+
         {/* Hint */}
         <p className="mt-4 text-xs text-muted-foreground">
-          Click the orb or enable wake word to start. Move your mouse to rotate the orb.
+          Click the orb or enable wake word to start. Say &quot;play [song name]&quot; for music.
         </p>
       </div>
     </div>
