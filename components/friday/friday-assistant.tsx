@@ -7,6 +7,7 @@ import { TranscriptDisplay } from "./transcript-display"
 import { StatusIndicator } from "./status-indicator"
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition"
 import { useAudioPlayback } from "@/hooks/use-audio-playback"
+import type { PCAction } from "@/lib/pc-control-tools"
 
 // Keywords that indicate the user wants current information
 const SEARCH_KEYWORDS = [
@@ -32,6 +33,14 @@ function shouldSearch(query: string): boolean {
   return SEARCH_KEYWORDS.some((keyword) => lowerQuery.includes(keyword))
 }
 
+// Execute PC actions based on tool results
+function executeAction(action: PCAction) {
+  if (action.action === "openUrl" && action.url) {
+    // Open the URL in a new tab
+    window.open(action.url, "_blank", "noopener,noreferrer")
+  }
+}
+
 export function FridayAssistant() {
   const [orbState, setOrbState] = useState<OrbState>("idle")
   const [audioLevel, setAudioLevel] = useState(0)
@@ -42,7 +51,9 @@ export function FridayAssistant() {
     snippet: string
     link: string
   }> | null>(null)
+  const [actionMessages, setActionMessages] = useState<string[]>([])
   const pendingQueryRef = useRef<string | null>(null)
+  const processedToolCallsRef = useRef<Set<string>>(new Set())
 
   const { messages, append, isLoading } = useChat({
     api: "/api/chat",
@@ -53,7 +64,47 @@ export function FridayAssistant() {
         playAudio(message.content)
       }
     },
+    onToolCall: ({ toolCall }) => {
+      // Check if we've already processed this tool call
+      const toolCallId = `${toolCall.toolName}-${JSON.stringify(toolCall.args)}`
+      if (processedToolCallsRef.current.has(toolCallId)) {
+        return
+      }
+      processedToolCallsRef.current.add(toolCallId)
+      
+      // Clear old tool calls after 5 seconds
+      setTimeout(() => {
+        processedToolCallsRef.current.delete(toolCallId)
+      }, 5000)
+    },
   })
+
+  // Process tool invocations from messages
+  useEffect(() => {
+    messages.forEach((message) => {
+      if (message.role === "assistant" && message.toolInvocations) {
+        message.toolInvocations.forEach((invocation) => {
+          if (invocation.state === "result" && invocation.result) {
+            const result = invocation.result as PCAction
+            if (result.action && result.url) {
+              // Create a unique key for this invocation
+              const invocationKey = `${message.id}-${invocation.toolCallId}`
+              if (!processedToolCallsRef.current.has(invocationKey)) {
+                processedToolCallsRef.current.add(invocationKey)
+                executeAction(result)
+                
+                // Show action message
+                setActionMessages((prev) => [...prev, result.message])
+                setTimeout(() => {
+                  setActionMessages((prev) => prev.filter((m) => m !== result.message))
+                }, 3000)
+              }
+            }
+          }
+        })
+      }
+    })
+  }, [messages])
 
   const handleVoiceResult = useCallback(
     async (transcript: string) => {
@@ -206,6 +257,18 @@ export function FridayAssistant() {
         }}
       />
 
+      {/* Action notifications */}
+      <div className="fixed top-4 right-4 z-50 flex flex-col gap-2">
+        {actionMessages.map((message, index) => (
+          <div
+            key={index}
+            className="px-4 py-2 rounded-lg bg-primary/90 text-primary-foreground text-sm animate-in slide-in-from-right fade-in duration-300"
+          >
+            {message}
+          </div>
+        ))}
+      </div>
+
       {/* Main content */}
       <div className="relative z-10 flex flex-col items-center justify-center min-h-screen px-4 py-8">
         {/* Title */}
@@ -265,9 +328,21 @@ export function FridayAssistant() {
         </div>
 
         {/* Hint */}
-        <p className="mt-4 text-xs text-muted-foreground">
-          Click the orb or enable wake word to start. Move your mouse to rotate the orb.
+        <p className="mt-4 text-xs text-muted-foreground text-center max-w-md">
+          Click the orb or enable wake word to start. Try saying &quot;Open Spotify&quot;, &quot;Search Google for...&quot;, or &quot;Play music&quot;
         </p>
+
+        {/* Capabilities hint */}
+        <div className="mt-6 flex flex-wrap justify-center gap-2 max-w-lg">
+          {["Spotify", "YouTube", "Google", "Gmail", "Maps", "Netflix", "Twitter", "GitHub"].map((app) => (
+            <span
+              key={app}
+              className="px-2 py-1 text-xs rounded-full bg-secondary/50 text-muted-foreground"
+            >
+              {app}
+            </span>
+          ))}
+        </div>
       </div>
     </div>
   )
