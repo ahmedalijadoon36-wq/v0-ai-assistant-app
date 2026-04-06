@@ -114,10 +114,14 @@ export function useSpeechRecognition({
     }
 
     recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
-      console.error("Speech recognition error:", event.error)
-      if (event.error !== "no-speech" && event.error !== "aborted") {
-        setIsListening(false)
+      // "no-speech" and "aborted" are expected behaviors, not real errors
+      // no-speech: user hasn't spoken yet (normal in wake word mode)
+      // aborted: recognition was intentionally stopped
+      if (event.error === "no-speech" || event.error === "aborted") {
+        return
       }
+      console.error("Speech recognition error:", event.error)
+      setIsListening(false)
     }
 
     recognition.onend = () => {
