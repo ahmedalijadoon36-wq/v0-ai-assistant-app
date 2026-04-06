@@ -53,7 +53,6 @@ function loadMediaPipe(): Promise<VisionModule> {
       window.removeEventListener("mediapipe-loaded", handleLoad)
       const vision = (window as unknown as Record<string, unknown>).__mediaPipeVision as VisionModule
       if (vision) {
-        console.log("[v0] MediaPipe loaded successfully via CDN")
         resolve(vision)
       } else {
         reject(new Error("Failed to load MediaPipe"))
@@ -193,7 +192,6 @@ export function useHandTracking({
 
         setIsTracking(true)
         setIsLoading(false)
-        console.log("[v0] Hand tracking started successfully")
 
         // Start detection loop
         animationFrameRef.current = requestAnimationFrame(detectHands)
