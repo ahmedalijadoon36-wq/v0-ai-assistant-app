@@ -7,8 +7,6 @@ import { TranscriptDisplay } from "./transcript-display"
 import { StatusIndicator } from "./status-indicator"
 import { useSpeechRecognition } from "@/hooks/use-speech-recognition"
 import { useAudioPlayback } from "@/hooks/use-audio-playback"
-import { useHandTracking } from "@/hooks/use-hand-tracking"
-import { Hand } from "lucide-react"
 
 // Keywords that indicate the user wants current information
 const SEARCH_KEYWORDS = [
@@ -38,7 +36,7 @@ export function FridayAssistant() {
   const [orbState, setOrbState] = useState<OrbState>("idle")
   const [audioLevel, setAudioLevel] = useState(0)
   const [wakeWordEnabled, setWakeWordEnabled] = useState(false)
-  const [handTrackingEnabled, setHandTrackingEnabled] = useState(false)
+  const [mousePosition, setMousePosition] = useState({ x: 0.5, y: 0.5 })
   const [searchResults, setSearchResults] = useState<Array<{
     title: string
     snippet: string
@@ -118,15 +116,17 @@ export function FridayAssistant() {
     onAudioLevel: setAudioLevel,
   })
 
-  // Hand tracking for orb control
-  const { handPosition, isTracking, isLoading: handLoading, videoRef } = useHandTracking({
-    enabled: handTrackingEnabled,
-    smoothing: 0.15,
-  })
+  // Mouse tracking for orb control
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      const x = e.clientX / window.innerWidth
+      const y = e.clientY / window.innerHeight
+      setMousePosition({ x, y })
+    }
 
-  // Calculate rotation from hand position
-  const rotationY = handPosition ? (handPosition.x - 0.5) * 2 : 0 // -1 to 1
-  const rotationX = handPosition ? -(handPosition.y - 0.5) * 2 : 0 // -1 to 1 (inverted for natural feel)
+    window.addEventListener("mousemove", handleMouseMove)
+    return () => window.removeEventListener("mousemove", handleMouseMove)
+  }, [])
 
   // Update orb state based on loading
   useEffect(() => {
@@ -243,8 +243,8 @@ export function FridayAssistant() {
           <AnimatedOrb 
             state={orbState} 
             audioLevel={audioLevel} 
-            rotationX={rotationX}
-            rotationY={rotationY}
+            mouseX={mousePosition.x}
+            mouseY={mousePosition.y}
           />
         </button>
 
@@ -264,42 +264,10 @@ export function FridayAssistant() {
           />
         </div>
 
-        {/* Keyboard shortcut hint */}
+        {/* Hint */}
         <p className="mt-4 text-xs text-muted-foreground">
-          Click the orb or enable wake word to start
+          Click the orb or enable wake word to start. Move your mouse to rotate the orb.
         </p>
-
-        {/* Hand Tracking Toggle */}
-        <button
-          onClick={() => setHandTrackingEnabled(!handTrackingEnabled)}
-          className={`mt-4 flex items-center gap-2 px-4 py-2 rounded-full border transition-all ${
-            handTrackingEnabled
-              ? "bg-primary/20 border-primary text-primary"
-              : "bg-secondary/30 border-border text-muted-foreground hover:border-primary/50"
-          }`}
-        >
-          <Hand className="w-4 h-4" />
-          <span className="text-sm">
-            {handLoading ? "Starting camera..." : isTracking ? "Hand Control ON" : "Hand Control"}
-          </span>
-        </button>
-
-        {/* Camera preview for hand tracking */}
-        {handTrackingEnabled && (
-          <div className="fixed bottom-4 right-4 rounded-lg overflow-hidden border border-border shadow-lg">
-            <video
-              ref={videoRef}
-              className="w-40 h-30 object-cover transform scale-x-[-1]"
-              playsInline
-              muted
-            />
-            {isTracking && handPosition && (
-              <div className="absolute bottom-1 left-1 px-2 py-0.5 bg-black/70 rounded text-xs text-green-400">
-                Tracking
-              </div>
-            )}
-          </div>
-        )}
       </div>
     </div>
   )
