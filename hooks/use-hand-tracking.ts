@@ -30,6 +30,18 @@ type VisionModule = any
 // Global to track if script is loading/loaded
 let mediaPipePromise: Promise<VisionModule> | null = null
 
+// Suppress MediaPipe's harmless WebGL warnings
+const originalConsoleError = typeof window !== "undefined" ? console.error : null
+if (typeof window !== "undefined") {
+  console.error = (...args: unknown[]) => {
+    const message = args[0]
+    if (typeof message === "string" && message.includes("OpenGL error checking is disabled")) {
+      return // Suppress this specific MediaPipe warning
+    }
+    originalConsoleError?.apply(console, args)
+  }
+}
+
 // Load MediaPipe via script tag injection to bypass webpack bundling
 function loadMediaPipe(): Promise<VisionModule> {
   if (mediaPipePromise) return mediaPipePromise
