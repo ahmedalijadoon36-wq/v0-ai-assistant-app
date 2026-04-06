@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { cookies } from "next/headers"
+import { cookies, headers } from "next/headers"
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url)
@@ -16,7 +16,13 @@ export async function GET(request: Request) {
 
   const clientId = process.env.SPOTIFY_CLIENT_ID
   const clientSecret = process.env.SPOTIFY_CLIENT_SECRET
-  const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/api/spotify/callback`
+  
+  // Get the host from headers to build the redirect URL dynamically
+  const headersList = await headers()
+  const host = headersList.get("host") || "localhost:3000"
+  const protocol = headersList.get("x-forwarded-proto") || "http"
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || `${protocol}://${host}`
+  const redirectUri = `${baseUrl}/api/spotify/callback`
 
   if (!clientId || !clientSecret) {
     return NextResponse.redirect(new URL("/?spotify_error=not_configured", request.url))

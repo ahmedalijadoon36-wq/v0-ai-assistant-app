@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { headers } from "next/headers"
 
 const SPOTIFY_AUTH_URL = "https://accounts.spotify.com/authorize"
 const SCOPES = [
@@ -18,8 +19,12 @@ export async function GET() {
     return NextResponse.json({ error: "Spotify not configured" }, { status: 500 })
   }
 
-  // Use the current origin for redirect
-  const redirectUri = `${process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"}/api/spotify/callback`
+  // Get the host from headers to build the redirect URL dynamically
+  const headersList = await headers()
+  const host = headersList.get("host") || "localhost:3000"
+  const protocol = headersList.get("x-forwarded-proto") || "http"
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || `${protocol}://${host}`
+  const redirectUri = `${baseUrl}/api/spotify/callback`
 
   const params = new URLSearchParams({
     client_id: clientId,

@@ -220,10 +220,17 @@ export function FridayAssistant() {
     setOrbState("listening")
   }, [])
 
+  // Handle stop command - stop Friday mid-speech
+  const handleStopCommand = useCallback(() => {
+    stopAudio()
+    setOrbState("idle")
+  }, [stopAudio])
+
   const { isListening, transcript, isSupported, startListening, stopListening } =
     useSpeechRecognition({
       onResult: handleVoiceResult,
       onWakeWord: handleWakeWord,
+      onStopCommand: handleStopCommand,
       wakeWord: "friday",
       continuous: wakeWordEnabled,
     })
@@ -390,7 +397,7 @@ export function FridayAssistant() {
 
         {/* Hint */}
         <p className="mt-4 text-xs text-muted-foreground">
-          Click the orb or enable wake word to start. Say &quot;play [song name]&quot; for music.
+          Click the orb or enable wake word to start. Say &quot;stop&quot; to interrupt. Say &quot;play [song]&quot; for music.
         </p>
       </div>
     </div>

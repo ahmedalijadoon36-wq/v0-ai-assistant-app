@@ -5,6 +5,7 @@ import { useState, useCallback, useRef, useEffect } from "react"
 interface UseSpeechRecognitionOptions {
   onResult?: (transcript: string) => void
   onWakeWord?: () => void
+  onStopCommand?: () => void
   wakeWord?: string
   continuous?: boolean
 }
@@ -38,9 +39,24 @@ declare global {
   }
 }
 
+// Stop commands to interrupt Friday
+const STOP_COMMANDS = [
+  "stop",
+  "shut up", 
+  "be quiet",
+  "quiet",
+  "silence",
+  "enough",
+  "okay stop",
+  "friday stop",
+  "stop friday",
+  "stop talking",
+]
+
 export function useSpeechRecognition({
   onResult,
   onWakeWord,
+  onStopCommand,
   wakeWord = "friday",
   continuous = false,
 }: UseSpeechRecognitionOptions = {}) {
@@ -84,6 +100,14 @@ export function useSpeechRecognition({
       }
 
       const currentTranscript = (finalTranscript || interimTranscript).toLowerCase()
+
+      // Check for stop commands - always listen for these to interrupt Friday
+      const hasStopCommand = STOP_COMMANDS.some(cmd => currentTranscript.includes(cmd))
+      if (hasStopCommand && onStopCommand) {
+        onStopCommand()
+        setTranscript("")
+        return
+      }
 
       // Check for wake word when in continuous mode
       if (continuous && !isListeningForCommandRef.current) {
@@ -138,7 +162,7 @@ export function useSpeechRecognition({
     }
 
     recognitionRef.current = recognition
-  }, [continuous, onResult, onWakeWord, wakeWord])
+  }, [continuous, onResult, onWakeWord, onStopCommand, wakeWord])
 
   const startListening = useCallback(() => {
     if (recognitionRef.current && !isListening) {
