@@ -17,8 +17,8 @@ export async function POST(req: Request) {
   }
 
   try {
-    // Using Rachel voice - professional female voice
-    const voiceId = "21m00Tcm4TlvDq8ikWAM"
+    // User's custom voice model
+    const voiceId = "NtS6nEHDYMQC9QczMQuq"
 
     const response = await fetch(
       `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream`,
