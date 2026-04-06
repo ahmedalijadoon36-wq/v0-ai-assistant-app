@@ -7,9 +7,11 @@ export type OrbState = "idle" | "listening" | "processing" | "speaking"
 interface AnimatedOrbProps {
   state: OrbState
   audioLevel?: number
+  rotationX?: number // -1 to 1
+  rotationY?: number // -1 to 1
 }
 
-export function AnimatedOrb({ state, audioLevel = 0 }: AnimatedOrbProps) {
+export function AnimatedOrb({ state, audioLevel = 0, rotationX = 0, rotationY = 0 }: AnimatedOrbProps) {
   const getOrbConfig = () => {
     switch (state) {
       case "listening":
@@ -41,8 +43,15 @@ export function AnimatedOrb({ state, audioLevel = 0 }: AnimatedOrbProps) {
 
   const orbConfig = getOrbConfig()
 
+  // Calculate 3D transform based on hand position
+  const transform = `perspective(1000px) rotateX(${rotationX * 30}deg) rotateY(${rotationY * 30}deg)`
+
   return (
-    <div className="relative flex items-center justify-center">
+    <motion.div 
+      className="relative flex items-center justify-center"
+      style={{ transform, transformStyle: "preserve-3d" }}
+      transition={{ type: "spring", stiffness: 100, damping: 20 }}
+    >
       {/* Outer glow rings */}
       <motion.div
         className="absolute rounded-full"
@@ -190,6 +199,6 @@ export function AnimatedOrb({ state, audioLevel = 0 }: AnimatedOrbProps) {
           }}
         />
       )}
-    </div>
+    </motion.div>
   )
 }
